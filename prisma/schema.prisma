@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  studentId     String
+  passwordHash  String
+  emojiTag      String?
+  academicScore Int       @default(0)
+  sportsScore   Int       @default(0)
+  role          String    @default("pending")
+  collegeId     String
+  college       College   @relation(fields: [collegeId], references: [id])
+  clubs         UserClub[]
+  createdAt     DateTime  @default(now())
+}
+
+model College {
+  id         String        @id
+  name       String
+  domain     String
+  users      User[]
+  admins     CollegeAdmin[]
+  approved   ApprovedUser[]
+}
+
+model UserClub {
+  id        String  @id @default(cuid())
+  userId    String
+  clubName  String
+  user      User    @relation(fields: [userId], references: [id])
+}
+
+model CollegeAdmin {
+  id         String  @id @default(cuid())
+  collegeId  String
+  userEmail  String
+  college    College @relation(fields: [collegeId], references: [id])
+}
+
+model ApprovedUser {
+  id         String  @id @default(cuid())
+  collegeId  String
+  studentId  String
+  college    College @relation(fields: [collegeId], references: [id])
+  @@unique([collegeId, studentId])
+}
