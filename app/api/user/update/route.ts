@@ -1,28 +1,59 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '../../../lib/prisma';
+import { NextResponse } from "next/server";
+
+// 🔹 Mock users and user-clubs
+let mockUsers: any[] = [
+  {
+    id: "u1",
+    name: "Alice",
+    email: "alice@college.edu",
+    studentId: "S1001",
+    collegeId: "123",
+    role: "student",
+    emojiTag: "🏅",
+    academicScore: 90,
+    sportsScore: 80,
+    clubs: ["123::tech", "123::music"],
+  },
+  {
+    id: "u2",
+    name: "Bob",
+    email: "bob@college.edu",
+    studentId: "S1002",
+    collegeId: "123",
+    role: "student",
+    emojiTag: "🏆",
+    academicScore: 70,
+    sportsScore: 95,
+    clubs: ["123::sports"],
+  },
+];
 
 export async function POST(req: Request) {
   const body = await req.json();
   const { userId, updates } = body;
-  if (!userId || !updates) return NextResponse.json({ error: 'Missing' }, { status: 400 });
 
-  const allowed = ['name','emojiTag','academicScore','sportsScore','clubs','email'];
-  const data = {};
-  for (const k of Object.keys(updates)) {
-    if (allowed.includes(k) && k !== 'clubs') data[k] = updates[k];
+  if (!userId || !updates) {
+    return NextResponse.json({ error: "Missing" }, { status: 400 });
   }
 
-  // update basic fields
-  // @ts-ignore
-  const user = await prisma.user.update({ where: { id: userId }, data });
+  const allowed = ["name", "emojiTag", "academicScore", "sportsScore", "clubs", "email"];
+  const user = mockUsers.find((u) => u.id === userId);
 
-  // handle clubs: replace existing with provided array
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  // Update allowed fields except clubs
+  for (const key of Object.keys(updates)) {
+    if (allowed.includes(key) && key !== "clubs") {
+      user[key] = updates[key];
+    }
+  }
+
+  // Update clubs if provided
   if (Array.isArray(updates.clubs)) {
-    await prisma.userClub.deleteMany({ where: { userId } });
-    const clubCreates = updates.clubs.map((c) => ({ userId, clubName: c }));
-    if (clubCreates.length) await prisma.userClub.createMany({ data: clubCreates });
+    user.clubs = updates.clubs;
   }
 
-  const refreshed = await prisma.user.findUnique({ where: { id: userId }, include: { clubs: true } });
-  return NextResponse.json({ success: true, user: refreshed });
+  return NextResponse.json({ success: true, user });
 }

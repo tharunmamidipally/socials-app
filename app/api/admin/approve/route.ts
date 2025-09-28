@@ -1,21 +1,31 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '../../../lib/prisma';
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   const { adminEmail, collegeId, studentId } = await req.json();
-  if (!adminEmail || !collegeId || !studentId) return NextResponse.json({ error: 'Missing' }, { status: 400 });
 
-  const admin = await prisma.collegeAdmin.findFirst({ where: { collegeId, userEmail: adminEmail } });
-  if (!admin) return NextResponse.json({ error: 'Not admin' }, { status: 403 });
-
-  // create approved record
-  await prisma.approvedUser.create({ data: { collegeId, studentId } }).catch(()=>null);
-
-  // update any pending user with that studentId
-  const user = await prisma.user.findFirst({ where: { collegeId, studentId } });
-  if (user) {
-    await prisma.user.update({ where: { id: user.id }, data: { role: 'student' } });
+  if (!adminEmail || !collegeId || !studentId) {
+    return NextResponse.json({ error: "Missing" }, { status: 400 });
   }
+
+  // 🔹 Mock admin check (replace later with real DB/API call)
+  const mockAdmins = [
+    { collegeId: "123", userEmail: "admin@example.com" },
+    { collegeId: "456", userEmail: "college@domain.com" },
+  ];
+
+  const admin = mockAdmins.find(
+    (a) => a.collegeId === collegeId && a.userEmail === adminEmail
+  );
+
+  if (!admin) {
+    return NextResponse.json({ error: "Not admin" }, { status: 403 });
+  }
+
+  // 🔹 Mock approve record (replace with DB insert)
+  console.log("Approved:", { collegeId, studentId });
+
+  // 🔹 Mock user update (replace with DB update)
+  console.log("Updated role for student:", studentId);
 
   return NextResponse.json({ success: true });
 }

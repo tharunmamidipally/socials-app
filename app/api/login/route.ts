@@ -1,27 +1,41 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '../../../lib/prisma';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import { NextResponse } from "next/server";
 
-const SECRET = process.env.JWT_SECRET || 'dev-secret';
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const collegeId = url.searchParams.get("collegeId");
 
-export async function POST(req: Request) {
-  const { email, password } = await req.json();
-  if (!email || !password) return NextResponse.json({ error: 'Missing' }, { status: 400 });
+  if (!collegeId) {
+    return NextResponse.json({ error: "collegeId required" }, { status: 400 });
+  }
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+  // 🔹 Mock dataset (replace later with real DB/API)
+  const mockUsers = [
+    { id: "u1", collegeId: "123", role: "student", academicScore: 92, sportsScore: 70 },
+    { id: "u2", collegeId: "123", role: "student", academicScore: 80, sportsScore: 95 },
+    { id: "u3", collegeId: "123", role: "student", academicScore: 88, sportsScore: 82 },
+    { id: "u4", collegeId: "456", role: "student", academicScore: 60, sportsScore: 65 },
+  ];
 
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-
-  const token = jwt.sign(
-    { sub: user.id, name: user.name, email: user.email, collegeId: user.collegeId, role: user.role },
-    SECRET,
-    { expiresIn: '7d' }
+  // Filter by collegeId + role
+  const users = mockUsers.filter(
+    (u) => u.collegeId === collegeId && u.role === "student"
   );
 
-  const res = NextResponse.json({ success: true, token });
-  res.cookies.set('socials_token', token, { httpOnly: true, path: '/', maxAge: 60 * 60 * 24 * 7 });
-  return res;
+  // Rankings
+  const academicTop = [...users]
+    .sort((a, b) => b.academicScore - a.academicScore)
+    .slice(0, 30);
+
+  const sportsTop = [...users]
+    .sort((a, b) => b.sportsScore - a.sportsScore)
+    .slice(0, 30);
+
+  const combinedTop = [...users]
+    .sort(
+      (a, b) =>
+        b.academicScore + b.sportsScore - (a.academicScore + a.sportsScore)
+    )
+    .slice(0, 30);
+
+  return NextResponse.json({ academicTop, sportsTop, combinedTop });
 }
