@@ -1,15 +1,16 @@
+// /components/signup-form.tsx
 "use client"
 
-import React, { useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { auth, db } from "@/lib/firebase"
-import { 
-  createUserWithEmailAndPassword, 
+import {
+  createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
-  updateProfile
+  updateProfile,
 } from "firebase/auth"
 import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -17,7 +18,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { FcGoogle } from "react-icons/fc"
-import { ArrowLeft, ArrowRight, Check, User, Mail, Phone, GraduationCap, Calendar, BookOpen, Heart } from "lucide-react"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  User,
+  GraduationCap,
+  Heart,
+  Mail,
+  Phone,
+} from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
 interface SignupFormProps {
@@ -26,18 +36,18 @@ interface SignupFormProps {
 }
 
 interface SignupData {
-  // Step 1: Basic Info
+  // Step 1
   fullName: string
   displayName: string
   personalEmail: string
   phoneNumber: string
-  
-  // Step 2: Academic Info
+
+  // Step 2
   collegeEmail: string
   yearOfStudy: string
   fieldOfStudy: string
-  
-  // Step 3: Skills & Interests
+
+  // Step 3
   skills: string[]
   interests: string[]
   customSkill: string
@@ -46,13 +56,13 @@ interface SignupData {
 
 const YEARS_OF_STUDY = [
   "1st Year",
-  "2nd Year", 
+  "2nd Year",
   "3rd Year",
   "4th Year",
   "5th Year",
   "Post Graduate",
   "PhD",
-  "Other"
+  "Other",
 ]
 
 const FIELDS_OF_STUDY = [
@@ -77,7 +87,7 @@ const FIELDS_OF_STUDY = [
   "Law",
   "Architecture",
   "Design",
-  "Other"
+  "Other",
 ]
 
 const SKILLS_OPTIONS = [
@@ -106,7 +116,7 @@ const SKILLS_OPTIONS = [
   "Analytical Thinking",
   "Problem Solving",
   "Communication",
-  "Teamwork"
+  "Teamwork",
 ]
 
 const INTERESTS_OPTIONS = [
@@ -132,20 +142,19 @@ const INTERESTS_OPTIONS = [
   "Dance",
   "Theater",
   "Volunteering",
-  "Gaming",
   "Board Games",
   "Outdoor Activities",
-  "Coding & Programming"
+  "Coding & Programming",
 ]
 
 export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
-  const [currentStep, setCurrentStep] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [showWelcome, setShowWelcome] = useState(false)
-  const [checkingUsername, setCheckingUsername] = useState(false)
+  const [currentStep, setCurrentStep] = useState<number>(1)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>("")
+  const [showWelcome, setShowWelcome] = useState<boolean>(false)
+  const [checkingUsername, setCheckingUsername] = useState<boolean>(false)
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null)
-  
+
   const [formData, setFormData] = useState<SignupData>({
     fullName: "",
     displayName: "",
@@ -157,213 +166,274 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
     skills: [],
     interests: [],
     customSkill: "",
-    customInterest: ""
+    customInterest: "",
   })
 
   const totalSteps = 3
 
+  // debounce token / cancellation to avoid race conditions
+  const checkIdRef = useRef(0)
+  const usernameTimerRef = useRef<number | undefined>(undefined)
+
   const updateFormData = (field: keyof SignupData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Check username availability when display name changes
-    if (field === "displayName" && value.trim()) {
-      checkUsernameAvailability(value.trim())
+    setFormData((prev) => ({ ...prev, [field]: value }))
+
+    // if user modifies displayName, kick off debounced check
+    if (field === "displayName") {
+      const v = (value || "").toString().trim()
+      // reset immediate UI state
+      setUsernameAvailable(null)
+      setCheckingUsername(false)
+      // clear previous debounce
+      if (usernameTimerRef.current) {
+        window.clearTimeout(usernameTimerRef.current)
+      }
+      if (!v) {
+        // empty -> nothing to check
+        setCheckingUsername(false)
+        setUsernameAvailable(null)
+        return
+      }
+      // set checking while debounce runs to reflect "checking" quickly
+      setCheckingUsername(true)
+      // debounce 300ms before firing request
+      usernameTimerRef.current = window.setTimeout(() => {
+        // increment check id to mark this call as latest
+        checkIdRef.current++
+        const myCheckId = checkIdRef.current
+        checkUsernameAvailability(v, myCheckId)
+      }, 300)
     }
   }
 
-  const checkUsernameAvailability = async (username: string) => {
-    if (!username.trim()) {
-      setUsernameAvailable(null)
-      return
-    }
-
+  // check username availability with timeout and stale-result ignore
+  async function checkUsernameAvailability(username: string, myCheckId?: number) {
+    // if myCheckId not supplied, use a new one
+    const id = myCheckId ?? ++checkIdRef.current
     setCheckingUsername(true)
+    setUsernameAvailable(null)
+
+    // timeout wrapper (3s)
+    const timeoutMs = 3000
     try {
-      const q = query(
-        collection(db, "users"),
-        where("displayName", "==", username.trim())
-      )
-      const querySnapshot = await getDocs(q)
-      setUsernameAvailable(querySnapshot.empty)
-    } catch (error) {
-      console.error("Error checking username:", error)
-      setUsernameAvailable(null)
+      const checkPromise = (async () => {
+        const q = query(collection(db, "users"), where("displayName", "==", username))
+        const snapshot = await getDocs(q)
+        return snapshot.empty
+      })()
+
+      const race = await Promise.race([
+        checkPromise,
+        new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs)),
+      ])
+
+      // if this call is stale (another check started after), ignore
+      if (id !== checkIdRef.current) {
+        // ignore result
+        return
+      }
+
+      setUsernameAvailable(Boolean(race))
+    } catch (err) {
+      // Timeout or network error
+      console.error("Username check failed:", err)
+      // only clear checking if current
+      if (id === checkIdRef.current) {
+        setUsernameAvailable(null)
+      }
     } finally {
-      setCheckingUsername(false)
+      if (id === checkIdRef.current) {
+        setCheckingUsername(false)
+      }
     }
   }
 
   const handleSkillToggle = (skill: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      skills: prev.skills.includes(skill)
-        ? prev.skills.filter(s => s !== skill)
-        : [...prev.skills, skill]
+      skills: prev.skills.includes(skill) ? prev.skills.filter((s) => s !== skill) : [...prev.skills, skill],
     }))
   }
 
   const handleInterestToggle = (interest: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      interests: prev.interests.includes(interest)
-        ? prev.interests.filter(i => i !== interest)
-        : [...prev.interests, interest]
+      interests: prev.interests.includes(interest) ? prev.interests.filter((i) => i !== interest) : [...prev.interests, interest],
     }))
   }
 
   const addCustomSkill = () => {
-    if (formData.customSkill.trim() && !formData.skills.includes(formData.customSkill.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        skills: [...prev.skills, prev.customSkill.trim()],
-        customSkill: ""
-      }))
+    const cs = formData.customSkill?.trim()
+    if (!cs) return
+    if (!formData.skills.includes(cs)) {
+      setFormData((prev) => ({ ...prev, skills: [...prev.skills, cs], customSkill: "" }))
+    } else {
+      setFormData((prev) => ({ ...prev, customSkill: "" }))
     }
   }
 
   const addCustomInterest = () => {
-    if (formData.customInterest.trim() && !formData.interests.includes(formData.customInterest.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        interests: [...prev.interests, prev.customInterest.trim()],
-        customInterest: ""
-      }))
+    const ci = formData.customInterest?.trim()
+    if (!ci) return
+    if (!formData.interests.includes(ci)) {
+      setFormData((prev) => ({ ...prev, interests: [...prev.interests, ci], customInterest: "" }))
+    } else {
+      setFormData((prev) => ({ ...prev, customInterest: "" }))
     }
   }
 
   const removeSkill = (skill: string) => {
-    setFormData(prev => ({
-      ...prev,
-      skills: prev.skills.filter(s => s !== skill)
-    }))
+    setFormData((prev) => ({ ...prev, skills: prev.skills.filter((s) => s !== skill) }))
   }
 
   const removeInterest = (interest: string) => {
-    setFormData(prev => ({
-      ...prev,
-      interests: prev.interests.filter(i => i !== interest)
-    }))
+    setFormData((prev) => ({ ...prev, interests: prev.interests.filter((i) => i !== interest) }))
   }
 
+  // Validation using trimmed values and also requiring usernameAvailable === true for step 1
   const validateStep = (step: number): boolean => {
     switch (step) {
-      case 1:
-        return !!(formData.fullName && formData.displayName && formData.personalEmail && formData.phoneNumber && usernameAvailable === true)
-      case 2:
-        return !!(formData.collegeEmail && formData.yearOfStudy && formData.fieldOfStudy)
-      case 3:
+     case 1: {
+  const { fullName, displayName, personalEmail, phoneNumber } = formData
+  return (
+    fullName.trim().length > 0 &&
+    displayName.trim().length > 0 &&
+    personalEmail.trim().length > 0 &&
+    phoneNumber.trim().length > 0
+  )
+}
+
+      case 2: {
+        const { collegeEmail, yearOfStudy, fieldOfStudy } = formData
+        return collegeEmail.trim().length > 0 && yearOfStudy.trim().length > 0 && fieldOfStudy.trim().length > 0
+      }
+      case 3: {
         return formData.skills.length > 0 && formData.interests.length > 0
+      }
       default:
         return false
     }
   }
 
   const nextStep = () => {
+    setError("")
     if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, totalSteps))
-      setError("")
+      setCurrentStep((p) => Math.min(p + 1, totalSteps))
     } else {
       setError("Please fill in all required fields")
     }
   }
 
   const prevStep = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 1))
     setError("")
+    setCurrentStep((p) => Math.max(p - 1, 1))
   }
 
+  // Submit flow: create user, update profile and write Firestore doc
   const handleSubmit = async () => {
+    setError("")
     if (!validateStep(3)) {
       setError("Please complete all steps")
       return
     }
 
     setLoading(true)
-    setError("")
-
     try {
-      // Create user account
-      const userCredential = await createUserWithEmailAndPassword(
-        auth, 
-        formData.personalEmail, 
-        "tempPassword123!" // You might want to add a password field
-      )
+      // NOTE: you currently don't collect a password in its own input. Using temporary password.
+      // In production, collect a real password or send an email link flow.
+      const tempPassword = "tempPassword123!"
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.personalEmail.trim(), tempPassword)
 
-      // Update user profile
+      // update firebase auth profile displayName
       await updateProfile(userCredential.user, {
-        displayName: formData.displayName
+        displayName: formData.displayName.trim(),
       })
 
-      // Save additional user data to Firestore
+      // write user doc to firestore
       await setDoc(doc(db, "users", userCredential.user.uid), {
-        fullName: formData.fullName,
-        displayName: formData.displayName,
-        personalEmail: formData.personalEmail,
-        phoneNumber: formData.phoneNumber,
-        collegeEmail: formData.collegeEmail,
+        fullName: formData.fullName.trim(),
+        displayName: formData.displayName.trim(),
+        personalEmail: formData.personalEmail.trim(),
+        phoneNumber: formData.phoneNumber.trim(),
+        collegeEmail: formData.collegeEmail?.trim() ?? "",
         yearOfStudy: formData.yearOfStudy,
         fieldOfStudy: formData.fieldOfStudy,
         skills: formData.skills,
         interests: formData.interests,
         createdAt: new Date(),
-        profileComplete: true
+        profileComplete: true,
       })
 
       setShowWelcome(true)
-      
-      // Show welcome message for 3 seconds then redirect
-      setTimeout(() => {
-        onSuccess?.()
-      }, 3000)
-
+      setTimeout(() => onSuccess?.(), 3000)
     } catch (err: any) {
-      setError(err.message)
+      console.error("Signup failed:", err)
+      // Provide friendly messages for common firebase auth errors
+      const code = err?.code || ""
+      if (code === "auth/email-already-in-use") {
+        setError("This email is already in use. Try logging in or use another email.")
+      } else if (code === "auth/invalid-email") {
+        setError("Invalid email address.")
+      } else if (code === "auth/weak-password") {
+        setError("Password is too weak.")
+      } else {
+        setError(err?.message || "Something went wrong. Please try again.")
+      }
     } finally {
       setLoading(false)
     }
   }
 
+  // Google signup handler
   const handleGoogleSignup = async () => {
-    setLoading(true)
     setError("")
+    setLoading(true)
     try {
       const provider = new GoogleAuthProvider()
       const result = await signInWithPopup(auth, provider)
-      
-      // Save user data to Firestore
-      await setDoc(doc(db, "users", result.user.uid), {
-        fullName: result.user.displayName || "",
-        displayName: result.user.displayName || "",
-        personalEmail: result.user.email || "",
-        phoneNumber: "",
+      const user = result.user
+
+      // Save user data to Firestore (set profileComplete=false so they can complete later)
+      await setDoc(doc(db, "users", user.uid), {
+        fullName: user.displayName || "",
+        displayName: (user.displayName || "").trim(),
+        personalEmail: user.email || "",
+        phoneNumber: user.phoneNumber || "",
         collegeEmail: "",
         yearOfStudy: "",
         fieldOfStudy: "",
         skills: [],
         interests: [],
         createdAt: new Date(),
-        profileComplete: false // User will need to complete profile later
+        profileComplete: false,
       })
 
       setShowWelcome(true)
-      setTimeout(() => {
-        onSuccess?.()
-      }, 3000)
+      setTimeout(() => onSuccess?.(), 2000)
     } catch (err: any) {
-      setError(err.message)
+      console.error("Google signup error:", err)
+      setError(err?.message || "Google signup failed")
     } finally {
       setLoading(false)
     }
   }
 
+  // cleanup on unmount - clear debounced timer
+  useEffect(() => {
+    return () => {
+      if (usernameTimerRef.current) {
+        window.clearTimeout(usernameTimerRef.current)
+      }
+      // bump checkId to make any in-flight checks stale
+      checkIdRef.current++
+    }
+  }, [])
+
+  // show welcome screen after success
   if (showWelcome) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-background p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
+        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 via-purple-600 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-white" />
           </div>
@@ -381,12 +451,12 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Create Your Account</CardTitle>
           <p className="text-muted-foreground">Step {currentStep} of {totalSteps}</p>
-          
+
           {/* Progress Bar */}
           <div className="w-full bg-muted rounded-full h-2 mt-4">
-            <div 
+            <div
               className={`bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300 ${
-                currentStep === 1 ? 'progress-33' : currentStep === 2 ? 'progress-66' : 'progress-100'
+                currentStep === 1 ? "w-[33%]" : currentStep === 2 ? "w-[66%]" : "w-[100%]"
               }`}
             />
           </div>
@@ -394,30 +464,20 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
 
         <CardContent className="space-y-6">
           <AnimatePresence mode="wait">
+            {/* Step 1 */}
             {currentStep === 1 && (
-              <motion.div
-                key="step1"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
+              <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                 <div className="flex items-center gap-2 mb-4">
                   <User className="w-5 h-5 text-blue-500" />
                   <h3 className="text-lg font-semibold">Basic Information</h3>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="fullName">Full Name *</Label>
-                    <Input
-                      id="fullName"
-                      placeholder="Enter your full name"
-                      value={formData.fullName}
-                      onChange={(e) => updateFormData("fullName", e.target.value)}
-                    />
+                    <Input id="fullName" placeholder="Enter your full name" value={formData.fullName} onChange={(e) => updateFormData("fullName", e.target.value)} />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="displayName">Display Name *</Label>
                     <div className="relative">
@@ -434,14 +494,13 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
                         </div>
                       )}
                     </div>
-                    {formData.displayName && (
+
+                    {formData.displayName.trim() !== "" && (
                       <div className="text-xs">
-                        {usernameAvailable === true && (
-                          <span className="text-green-600">✓ Username is available</span>
-                        )}
-                        {usernameAvailable === false && (
-                          <span className="text-red-600">✗ Username is already taken</span>
-                        )}
+                        {usernameAvailable === true && <span className="text-green-600">✓ Username is available</span>}
+                        {usernameAvailable === false && <span className="text-red-600">✗ Username is already taken</span>}
+                        {usernameAvailable === null && checkingUsername === true && <span className="text-muted-foreground">Checking availability…</span>}
+                        {usernameAvailable === null && checkingUsername === false && <span className="text-muted-foreground">Enter a display name to check availability</span>}
                       </div>
                     )}
                   </div>
@@ -449,36 +508,19 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
 
                 <div className="space-y-2">
                   <Label htmlFor="personalEmail">Personal Email *</Label>
-                  <Input
-                    id="personalEmail"
-                    type="email"
-                    placeholder="your.email@example.com"
-                    value={formData.personalEmail}
-                    onChange={(e) => updateFormData("personalEmail", e.target.value)}
-                  />
+                  <Input id="personalEmail" type="email" placeholder="your.email@example.com" value={formData.personalEmail} onChange={(e) => updateFormData("personalEmail", e.target.value)} />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="phoneNumber">Phone Number *</Label>
-                  <Input
-                    id="phoneNumber"
-                    type="tel"
-                    placeholder="+91 98765 43210"
-                    value={formData.phoneNumber}
-                    onChange={(e) => updateFormData("phoneNumber", e.target.value)}
-                  />
+                  <Input id="phoneNumber" type="tel" placeholder="+91 98765 43210" value={formData.phoneNumber} onChange={(e) => updateFormData("phoneNumber", e.target.value)} />
                 </div>
               </motion.div>
             )}
 
+            {/* Step 2 */}
             {currentStep === 2 && (
-              <motion.div
-                key="step2"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
+              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                 <div className="flex items-center gap-2 mb-4">
                   <GraduationCap className="w-5 h-5 text-purple-500" />
                   <h3 className="text-lg font-semibold">Academic Information</h3>
@@ -486,13 +528,7 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
 
                 <div className="space-y-2">
                   <Label htmlFor="collegeEmail">College Email ID *</Label>
-                  <Input
-                    id="collegeEmail"
-                    type="email"
-                    placeholder="student@college.edu"
-                    value={formData.collegeEmail}
-                    onChange={(e) => updateFormData("collegeEmail", e.target.value)}
-                  />
+                  <Input id="collegeEmail" type="email" placeholder="student@college.edu" value={formData.collegeEmail} onChange={(e) => updateFormData("collegeEmail", e.target.value)} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -504,7 +540,9 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {YEARS_OF_STUDY.map((year) => (
-                          <SelectItem key={year} value={year}>{year}</SelectItem>
+                          <SelectItem key={year} value={year}>
+                            {year}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -518,7 +556,9 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
                       </SelectTrigger>
                       <SelectContent>
                         {FIELDS_OF_STUDY.map((field) => (
-                          <SelectItem key={field} value={field}>{field}</SelectItem>
+                          <SelectItem key={field} value={field}>
+                            {field}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -527,95 +567,76 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
               </motion.div>
             )}
 
+            {/* Step 3 */}
             {currentStep === 3 && (
-              <motion.div
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-6"
-              >
+              <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Heart className="w-5 h-5 text-emerald-500" />
                   <h3 className="text-lg font-semibold">Skills & Interests</h3>
                 </div>
 
-                {/* Skills Section */}
+                {/* Skills */}
                 <div className="space-y-3">
                   <Label>Skills * (Select at least one)</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
                     {SKILLS_OPTIONS.map((skill) => (
                       <div key={skill} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`skill-${skill}`}
-                          checked={formData.skills.includes(skill)}
-                          onCheckedChange={() => handleSkillToggle(skill)}
-                        />
-                        <Label htmlFor={`skill-${skill}`} className="text-sm">{skill}</Label>
+                        <Checkbox id={`skill-${skill}`} checked={formData.skills.includes(skill)} onCheckedChange={() => handleSkillToggle(skill)} />
+                        <Label htmlFor={`skill-${skill}`} className="text-sm">
+                          {skill}
+                        </Label>
                       </div>
                     ))}
                   </div>
-                  
-                  {/* Custom Skill Input */}
+
+                  {/* Custom skill */}
                   <div className="flex gap-2">
-                    <Input
-                      placeholder="Add custom skill"
-                      value={formData.customSkill}
-                      onChange={(e) => updateFormData("customSkill", e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && addCustomSkill()}
-                    />
+                    <Input placeholder="Add custom skill" value={formData.customSkill} onChange={(e) => updateFormData("customSkill", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCustomSkill())} />
                     <Button type="button" onClick={addCustomSkill} variant="outline">
                       Add
                     </Button>
                   </div>
-                  
-                  {/* Selected Skills */}
+
+                  {/* Selected skills */}
                   {formData.skills.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {formData.skills.map((skill) => (
-                        <Badge key={skill} variant="secondary" className="cursor-pointer" onClick={() => removeSkill(skill)}>
-                          {skill} ×
+                      {formData.skills.map((s) => (
+                        <Badge key={s} variant="secondary" className="cursor-pointer" onClick={() => removeSkill(s)}>
+                          {s} ×
                         </Badge>
                       ))}
                     </div>
                   )}
                 </div>
 
-                {/* Interests Section */}
+                {/* Interests */}
                 <div className="space-y-3">
                   <Label>Interests * (Select at least one)</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded-md p-3">
                     {INTERESTS_OPTIONS.map((interest) => (
                       <div key={interest} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`interest-${interest}`}
-                          checked={formData.interests.includes(interest)}
-                          onCheckedChange={() => handleInterestToggle(interest)}
-                        />
-                        <Label htmlFor={`interest-${interest}`} className="text-sm">{interest}</Label>
+                        <Checkbox id={`interest-${interest}`} checked={formData.interests.includes(interest)} onCheckedChange={() => handleInterestToggle(interest)} />
+                        <Label htmlFor={`interest-${interest}`} className="text-sm">
+                          {interest}
+                        </Label>
                       </div>
                     ))}
                   </div>
-                  
-                  {/* Custom Interest Input */}
+
+                  {/* Custom interest */}
                   <div className="flex gap-2">
-                    <Input
-                      placeholder="Add custom interest"
-                      value={formData.customInterest}
-                      onChange={(e) => updateFormData("customInterest", e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && addCustomInterest()}
-                    />
+                    <Input placeholder="Add custom interest" value={formData.customInterest} onChange={(e) => updateFormData("customInterest", e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCustomInterest())} />
                     <Button type="button" onClick={addCustomInterest} variant="outline">
                       Add
                     </Button>
                   </div>
-                  
-                  {/* Selected Interests */}
+
+                  {/* Selected interests */}
                   {formData.interests.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {formData.interests.map((interest) => (
-                        <Badge key={interest} variant="secondary" className="cursor-pointer" onClick={() => removeInterest(interest)}>
-                          {interest} ×
+                      {formData.interests.map((i) => (
+                        <Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => removeInterest(i)}>
+                          {i} ×
                         </Badge>
                       ))}
                     </div>
@@ -626,16 +647,12 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
           </AnimatePresence>
 
           {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-red-500 text-sm text-center p-3 bg-red-50 dark:bg-red-950/20 rounded-md"
-            >
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-red-500 text-sm text-center p-3 bg-red-50 rounded-md">
               {error}
             </motion.div>
           )}
 
-          {/* Navigation Buttons */}
+          {/* Buttons */}
           <div className="flex justify-between pt-4">
             <div>
               {currentStep > 1 && (
@@ -645,19 +662,20 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
                 </Button>
               )}
             </div>
-            
+
             <div className="flex gap-2">
               {onBack && (
                 <Button variant="ghost" onClick={onBack} disabled={loading}>
                   Back to Login
                 </Button>
               )}
-              
+
               {currentStep < totalSteps ? (
-                <Button onClick={nextStep} disabled={loading}>
-                  Next
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
+               <Button onClick={nextStep} disabled={loading}>
+                    Next
+                <ArrowRight className="w-4 h-4 ml-2" />
+           </Button>
+
               ) : (
                 <Button onClick={handleSubmit} disabled={loading}>
                   {loading ? "Creating Account..." : "Create Account"}
@@ -666,7 +684,7 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
             </div>
           </div>
 
-          {/* Google Signup Option */}
+          {/* OR Google */}
           {currentStep === 1 && (
             <>
               <div className="flex items-center my-4">
@@ -675,13 +693,7 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
                 <div className="flex-1 h-px bg-muted"></div>
               </div>
 
-              <Button 
-                type="button" 
-                variant="outline" 
-                className="w-full flex items-center justify-center gap-2"
-                onClick={handleGoogleSignup}
-                disabled={loading}
-              >
+              <Button type="button" variant="outline" className="w-full flex items-center justify-center gap-2" onClick={handleGoogleSignup} disabled={loading}>
                 <FcGoogle className="h-5 w-5" />
                 Continue with Google
               </Button>
@@ -692,3 +704,5 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
     </div>
   )
 }
+
+export default SignupForm
