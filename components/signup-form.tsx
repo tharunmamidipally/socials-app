@@ -248,7 +248,7 @@ export function SignupForm({ onSuccess, onBack }: SignupFormProps) {
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
-        return !!(formData.fullName && formData.displayName && formData.personalEmail && formData.phoneNumber && usernameAvailable)
+        return !!(formData.fullName && formData.displayName && formData.personalEmail && formData.phoneNumber && usernameAvailable === true)
       case 2:
         return !!(formData.collegeEmail && formData.yearOfStudy && formData.fieldOfStudy)
       case 3:
