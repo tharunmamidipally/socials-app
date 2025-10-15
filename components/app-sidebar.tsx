@@ -14,11 +14,13 @@ import {
   CalendarDays,
   HelpCircle,
   PlusCircle,
+  Crown,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchSpaces } from "@/lib/api"
 import { motion, AnimatePresence } from "framer-motion"
+import { useSidebar } from "@/components/ui/sidebar"
 import {
   Sidebar,
   SidebarContent,
@@ -52,8 +54,8 @@ import { collection, addDoc, onSnapshot } from "firebase/firestore"
 interface AppSidebarProps {
   activeChannel: string
   onChannelSelect: (channel: string) => void
-  currentView: "chat" | "leaderboards"
-  onViewChange: (view: "chat" | "leaderboards") => void
+  currentView: "chat" | "leaderboards" | "profile" | "user-profile"
+  onViewChange: (view: "chat" | "leaderboards" | "profile" | "user-profile") => void
   currentSpace: string
   onSpaceChange: (space: string) => void
 }
@@ -83,6 +85,8 @@ export function AppSidebar({
     queryKey: ["spaces"],
     queryFn: fetchSpaces,
   })
+  
+  const { setOpenMobile } = useSidebar()
 
   const [showClubs, setShowClubs] = useState(false)
   const [openCreateClub, setOpenCreateClub] = useState(false)
@@ -137,13 +141,13 @@ export function AppSidebar({
     <>
       <Sidebar className="border-r border-border/40 bg-background">
         {/* HEADER */}
-        <SidebarHeader className="border-b border-border/40 p-4 bg-background">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 via-purple-600 to-emerald-500 rounded-xl flex items-center justify-center shadow-md">
-              <span className="text-lg font-bold text-white">S</span>
+        <SidebarHeader className="border-b border-border/40 p-2 sm:p-4 bg-background">
+          <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 via-purple-600 to-emerald-500 rounded-xl flex items-center justify-center shadow-md">
+              <span className="text-sm sm:text-lg font-bold text-white">S</span>
             </div>
-            <div>
-              <h1 className="font-bold text-xl">Socials</h1>
+            <div className="hidden sm:block">
+              <h1 className="font-bold text-lg sm:text-xl">Socials</h1>
               <p className="text-xs text-muted-foreground">Connect. Compete. Grow.</p>
             </div>
           </div>
@@ -151,17 +155,17 @@ export function AppSidebar({
           {/* SPACE SELECTOR */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-muted/50 transition-colors border border-border/40">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">{currentSpaceData?.icon || "🏛️"}</span>
+              <button className="w-full flex items-center justify-between p-2 sm:p-3 rounded-xl hover:bg-muted/50 transition-colors border border-border/40">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <span className="text-lg sm:text-xl">{currentSpaceData?.icon || "🏛️"}</span>
                   <div className="text-left">
-                    <p className="font-medium text-sm">{currentSpaceData?.name || "IIT Delhi"}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="font-medium text-xs sm:text-sm truncate">{currentSpaceData?.name || "IIT Delhi"}</p>
+                    <p className="text-xs text-muted-foreground hidden sm:block">
                       {currentSpaceData?.memberCount || 2340} members
                     </p>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-64" align="start">
@@ -195,6 +199,7 @@ export function AppSidebar({
                       onClick={() => {
                         onViewChange("chat")
                         onChannelSelect(channel.id)
+                        setOpenMobile(false) // Close mobile sidebar
                       }}
                       className="w-full justify-start"
                     >
@@ -211,6 +216,7 @@ export function AppSidebar({
                       onClick={() => {
                         onViewChange("chat")
                         onChannelSelect("events")
+                        setOpenMobile(false) // Close mobile sidebar
                       }}
                       className="flex-1 justify-start"
                     >
@@ -221,6 +227,7 @@ export function AppSidebar({
                       <button
                         onClick={() => alert(`Create event for ${activeChannel} club`)}
                         className="ml-2 text-emerald-600 hover:text-emerald-800"
+                        title={`Create event for ${activeChannel} club`}
                       >
                         <PlusCircle className="w-5 h-5" />
                       </button>
@@ -264,6 +271,7 @@ export function AppSidebar({
                             onClick={() => {
                               onViewChange("chat")
                               onChannelSelect(club.name)
+                              setOpenMobile(false) // Close mobile sidebar
                             }}
                             isActive={activeChannel === club.name}
                             className="w-full justify-start text-sm"
@@ -288,6 +296,28 @@ export function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
 
+          {/* LEADERBOARD */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Leaderboard</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={currentView === "leaderboards"}
+                    onClick={() => {
+                      onViewChange("leaderboards")
+                      setOpenMobile(false) // Close mobile sidebar
+                    }}
+                    className="w-full justify-start"
+                  >
+                    <Crown className="w-4 h-4" />
+                    <span>🏆 Leaderboard</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
           {/* BOTS */}
           <SidebarGroup>
             <SidebarGroupLabel>Smart Bots</SidebarGroupLabel>
@@ -300,6 +330,7 @@ export function AppSidebar({
                       onClick={() => {
                         onViewChange("chat")
                         onChannelSelect(bot.id)
+                        setOpenMobile(false) // Close mobile sidebar
                       }}
                       className="w-full justify-start h-auto py-2 px-3"
                     >

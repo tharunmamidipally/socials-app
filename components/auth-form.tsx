@@ -3,7 +3,6 @@
 import React, { useState } from "react"
 import { auth } from "@/lib/firebase"
 import { 
-  createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup
@@ -12,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { FcGoogle } from "react-icons/fc" // Google icon
+import { SignupForm } from "./signup-form"
 
 interface AuthFormProps {
   onSuccess?: () => void
@@ -21,6 +21,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLogin, setIsLogin] = useState(true)
+  const [showSignup, setShowSignup] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -29,13 +30,8 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
     setLoading(true)
     setError("")
     try {
-      if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password)
-        alert("Logged in successfully 🎉")
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password)
-        alert("Account created successfully 🎉")
-      }
+      await signInWithEmailAndPassword(auth, email, password)
+      alert("Logged in successfully 🎉")
       onSuccess?.()
     } catch (err: any) {
       setError(err.message)
@@ -57,33 +53,46 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
     setLoading(false)
   }
 
+  if (showSignup) {
+    return <SignupForm onSuccess={onSuccess} onBack={() => setShowSignup(false)} />
+  }
+
   return (
-    <div className="flex justify-center items-center min-h-screen bg-background">
-      <Card className="w-full max-w-md shadow-lg p-4">
-        <CardHeader>
-          <CardTitle className="text-center text-xl font-bold">
-            {isLogin ? "Login" : "Sign Up"}
-          </CardTitle>
+    <div className="flex justify-center items-center min-h-screen bg-background p-4">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+          <p className="text-muted-foreground">Sign in to your account</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Please wait..." : isLogin ? "Login" : "Sign Up"}
+            <div className="space-y-2">
+              <Input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="h-11"
+              />
+            </div>
+            <div className="space-y-2">
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="h-11"
+              />
+            </div>
+            {error && (
+              <div className="text-red-500 text-sm text-center p-3 bg-red-50 dark:bg-red-950/20 rounded-md">
+                {error}
+              </div>
+            )}
+            <Button type="submit" className="w-full h-11" disabled={loading}>
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
@@ -98,7 +107,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <Button 
             type="button" 
             variant="outline" 
-            className="w-full flex items-center justify-center gap-2"
+            className="w-full h-11 flex items-center justify-center gap-2"
             onClick={handleGoogleLogin}
             disabled={loading}
           >
@@ -106,17 +115,19 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
             Continue with Google
           </Button>
 
-          {/* Switch between Login / Signup */}
-          <p className="text-center text-sm mt-4">
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              type="button"
-              className="text-emerald-600 hover:underline"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? "Sign Up" : "Login"}
-            </button>
-          </p>
+          {/* Switch to Signup */}
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <button
+                type="button"
+                className="text-blue-600 hover:underline font-medium"
+                onClick={() => setShowSignup(true)}
+              >
+                Create Account
+              </button>
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

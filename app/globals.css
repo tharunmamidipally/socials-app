@@ -116,4 +116,9 @@
   [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.5);
   }
+
+  /* Progress bar width utilities */
+  .progress-33 { width: 33.333%; }
+  .progress-66 { width: 66.666%; }
+  .progress-100 { width: 100%; }
 }

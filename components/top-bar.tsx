@@ -11,10 +11,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-export function TopBar() {
+interface TopBarProps {
+  onProfileClick?: () => void
+}
+
+export function TopBar({ onProfileClick }: TopBarProps) {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const auth = getAuth()
@@ -107,9 +112,13 @@ export function TopBar() {
           </DropdownMenuTrigger>
 
           <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuItem onClick={onProfileClick}>
+              <User className="mr-2 h-4 w-4" /> My Profile
+            </DropdownMenuItem>
             <DropdownMenuItem>
               <Settings className="mr-2 h-4 w-4" /> Preferences
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-red-500 focus:text-red-600">
               <LogOut className="mr-2 h-4 w-4" /> Sign Out
             </DropdownMenuItem>
